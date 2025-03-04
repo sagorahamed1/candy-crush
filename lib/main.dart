@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:audioplayers/audioplayers.dart';
+// import 'package:audioplayers/audioplayers.dart';
 import 'dart:math';
+import 'dart:async';
 
 void main() {
   runApp(MyApp());
@@ -29,7 +30,7 @@ class CandyCrushGame extends StatefulWidget {
 class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProviderStateMixin {
   int gridSize = 8;
   List<List<String>> grid = [];
-  List<String> items = ['🍎', '🍌', '🍇', '🍓', '🍒'];
+  List<String> items = ['🍎', '🍌', '🍇', '🍓', '🍒', '🍭', '🎁', '💣']; // Added special candies
   int? selectedRow;
   int? selectedCol;
   List<List<bool>> toRemove = [];
@@ -37,7 +38,10 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
   bool isAnimating = false;
   int matchesRemaining = 12; // Target matches
   int score = 0;
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  int movesLeft = 20; // Move-based level
+  int timeLeft = 60; // Time-based level
+  Timer? timer;
+  // final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -47,6 +51,7 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
       vsync: this,
       duration: Duration(seconds: 1),
     );
+    startTimer();
   }
 
   void initializeGrid() {
@@ -59,10 +64,12 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
   }
 
   void swapTiles(int row1, int col1, int row2, int col2) {
+    if (movesLeft <= 0) return; // Prevent swapping if no moves left
     setState(() {
       String temp = grid[row1][col1];
       grid[row1][col1] = grid[row2][col2];
       grid[row2][col2] = temp;
+      movesLeft--;
     });
     _playSound('swap.mp3'); // Play swap sound
     checkMatches();
@@ -110,6 +117,7 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
       for (int i = 0; i < gridSize; i++) {
         for (int j = 0; j < gridSize; j++) {
           if (toRemove[i][j]) {
+            activateSpecialCandy(i, j); // Check for special candies
             grid[i][j] = ''; // Empty string for removed candies
           }
         }
@@ -117,6 +125,56 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
     });
     _playSound('match.mp3'); // Play match sound
     refillGrid();
+  }
+
+  void activateSpecialCandy(int row, int col) {
+    String candy = grid[row][col];
+    if (candy == '🍭') {
+      activateStripedCandy(row, col, Random().nextBool());
+    } else if (candy == '🎁') {
+      activateWrappedCandy(row, col);
+    } else if (candy == '💣') {
+      activateColorBomb(row, col);
+    }
+  }
+
+  void activateStripedCandy(int row, int col, bool isHorizontal) {
+    setState(() {
+      if (isHorizontal) {
+        for (int i = 0; i < gridSize; i++) {
+          toRemove[row][i] = true;
+        }
+      } else {
+        for (int i = 0; i < gridSize; i++) {
+          toRemove[i][col] = true;
+        }
+      }
+    });
+  }
+
+  void activateWrappedCandy(int row, int col) {
+    setState(() {
+      for (int i = row - 1; i <= row + 1; i++) {
+        for (int j = col - 1; j <= col + 1; j++) {
+          if (i >= 0 && i < gridSize && j >= 0 && j < gridSize) {
+            toRemove[i][j] = true;
+          }
+        }
+      }
+    });
+  }
+
+  void activateColorBomb(int row, int col) {
+    String targetCandy = grid[row][col];
+    setState(() {
+      for (int i = 0; i < gridSize; i++) {
+        for (int j = 0; j < gridSize; j++) {
+          if (grid[i][j] == targetCandy) {
+            toRemove[i][j] = true;
+          }
+        }
+      }
+    });
   }
 
   void refillGrid() {
@@ -187,6 +245,8 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
       initializeGrid();
       score = 0;
       matchesRemaining = 12;
+      movesLeft = 20;
+      timeLeft = 60;
     });
   }
 
@@ -210,8 +270,42 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
     }
   }
 
+  void startTimer() {
+    timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      setState(() {
+        if (timeLeft > 0) {
+          timeLeft--;
+        } else {
+          timer.cancel();
+          _showTimeUpDialog();
+        }
+      });
+    });
+  }
+
+  void _showTimeUpDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text('Time Up!'),
+          content: Text('You ran out of time. Try again!'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                resetGame();
+              },
+              child: Text('Retry'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _playSound(String soundFile) async {
-    await _audioPlayer.play(AssetSource(soundFile));
+    // await _audioPlayer.play(AssetSource(soundFile));
   }
 
   @override
@@ -233,6 +327,14 @@ class _CandyCrushGameState extends State<CandyCrushGame> with SingleTickerProvid
                 ),
                 Text(
                   'Matches Left: $matchesRemaining',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Time: $timeLeft',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Moves: $movesLeft',
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
               ],
